@@ -1,0 +1,86 @@
+/*************************************************************/
+/***This program generates a list of all libraries that are***/
+/***associated with a specified server                     ***/
+/*************************************************************/
+/*Created by Ian Sedgwick and Peter Hobart, SAS UK Education */
+/*Version 1.0 September 2008                                 */
+/*Support : None                                             */
+/*************************************************************/
+/***Modify the connection options to contain the values necessary to ***/
+/***connect to your metadata server***/
+options  metaserver="localhost"
+         metaport=8561
+         metauser="localhost\sasadm"
+         metapass="password"
+         metarepository="Foundation"
+         metaprotocol=BRIDGE;
+
+/***Set the &serverContext macro variable to the value of your server context***/
+%let serverContext=SASApp;
+
+/*Display 0 as No, 1 as Yes*/
+proc format;
+  value $yn "0"="No"
+            "1"="Yes";
+run;
+data mymetalibs;
+   length Libname Serveruri Liburi Type Description $256
+   Id $17 
+   Engine Libref $ 8 
+   DBMS Preassigned $ 1
+   MetadataCreated MetadataUpdated $18 ;
+   /***Initialize variables returned from function calls***/
+   call missing(libname,serveruri,liburi,type,description,
+       id,engine,libref,dbms,preassigned,MetadataCreated,MetadataUpdated);
+   /***Initialise temp variables***/
+   call missing(nobj,rc,librc);
+   n=1;
+   /***Locate the server context***/
+   nobj=metadata_getnobj("omsobj:ServerContext?@Name= '"||"&serverContext"||"'",n,serveruri);
+   if n>0 then
+      do;
+      /***Retrieve the associated DataPackages, if there are any***/
+      librc=metadata_getnasn(serveruri,'DataPackages',1,liburi);
+      if librc>0 then
+         do a=1 to librc;
+         /***Loop through all associated DataPackages and look for SASLibrary objects***/
+         rc=metadata_getnasn(serveruri,'DataPackages',a,liburi);
+         /***Check to see if the current association is a SASLibrary type***/
+         rc=metadata_resolve(liburi,type,id);
+         if type="SASLibrary" then
+            do;
+            rc=metadata_getattr(liburi,'Name',Libname);
+            rc=metadata_getattr(liburi,'Id',Id);
+            rc=metadata_getattr(liburi,'Desc',Description);
+            rc=metadata_getattr(liburi,'Engine',Engine);
+            rc=metadata_getattr(liburi,'IsDBMSLibname',dbms);
+            rc=metadata_getattr(liburi,'IsPreassigned',preassigned);
+            rc=metadata_getattr(liburi,'Libref',Libref);
+            rc=metadata_getattr(liburi,'MetadataCreated',MetadataCreated);
+            rc=metadata_getattr(liburi,'MetadataUpdated',MetadataUpdated);
+            output;
+         end;
+   end;
+   /***If there are no DataPackage associations, write a message to the log***/
+   else put 'There are no libraries associated with this server';
+   end;
+   /***If the server context cannot be found, write a message to the log***/
+   else put 'The specified server context does not exist in the metadata repository.';
+   drop librc n a nobj rc;
+   format preassigned dbms $yn.;
+   call symput("metaver",metadata_version());
+run;
+
+ods listing close;
+ods html style=fancyprinter;
+title  "Library information defined in metadata";
+title2 "Application server &serverContext";
+footnote "Note: Run in metadata version &metaver";
+	proc print data=mymetalibs noobs;
+	run;
+ods html close;
+ods listing;
+
+
+
+
